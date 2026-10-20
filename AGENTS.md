@@ -3,8 +3,8 @@
 Guidance for AI coding agents working in the karpenter-provider-gcp repository.
 
 This file is maintained in the separate `.pi/` Git repository. Root-level
-`AGENTS.md` and `CLAUDE.md` symlink to this file. All repository paths and commands
-below are relative to the karpenter-provider-gcp root, not `.pi/`.
+`AGENTS.md` symlinks to this file. All repository paths and commands below are
+relative to the karpenter-provider-gcp root, not `.pi/`.
 
 ## Repository overview
 
