@@ -58,7 +58,12 @@ this skill directory. Locate the root with Git; `.pi/` is a separate repository.
    flag names. The previous workflow used `hack/e2e-runner`, wrapped by
    `make e2e-tests E2E_SELECTION=standard GINKGO_PROCS=20`, with
    `E2E_REPORT=<artifact-dir>/report.md`. Use this wrapper when inspection
-   confirms it invokes the helper; older checkouts may run raw Ginkgo instead.
+   confirms it invokes the helper and its signal handling is suitable for the
+   launcher below; older checkouts may run raw Ginkgo instead. If a Make/`go run`
+   wrapper prevents reliable cancellation, build the inspected helper into the
+   local artifact directory and invoke that binary with the wrapper's exact
+   environment and arguments. Record this launcher-only deviation; do not change
+   selection, concurrency, locking, or reporting behavior.
    If absent, ask for its path/ref rather than substituting raw Ginkgo or a
    legacy Make target and silently losing preset behavior.
 4. Verify `standard` (or the requested preset) exists. Prefer the helper's preset
@@ -73,21 +78,46 @@ this skill directory. Locate the root with Git; `.pi/` is a separate repository.
 - Check required tools and authentication without printing tokens, credential
   contents, or service-account JSON. Resolve credential paths to absolute paths.
 - The previous workflow loaded the main checkout's ignored `.envrc` via
-  `direnv`, including its `KUBECONFIG`. From the selected worktree, use
-  `direnv exec . <command>` or `eval "$(direnv export bash)"` in each new shell
-  when applicable. Never copy secrets into worktrees or source `.envrc`
-  directly. If it is not allowed, ask the user to inspect/authorize it; do not
-  run `direnv allow` on their behalf. Require an explicit region rather than
-  accidentally using Make's `us-central1` default for a different location.
+  `direnv`, including its `KUBECONFIG`. Use `direnv exec <main-checkout> <command>`
+  in each new shell, then change into the selected source worktree. Do not assume
+  a worktree inherits a sibling checkout's `.envrc`. Never copy secrets into
+  worktrees or source `.envrc` directly. If it is not allowed, ask the user to
+  inspect/authorize it; do not run `direnv allow` on their behalf.
+- Treat inherited settings as unverified, even when `direnv` is allowed. Before
+  deployment, reconcile project, location, region, prefix, cluster, namespace,
+  pod ranges, tag key, and node service-account overrides with the approved
+  existing target. Require an explicit region rather than accidentally using
+  Make's `us-central1` default. A user-supplied cluster URL can identify the
+  intended target; do not silently substitute another discovered cluster. Keep
+  resolved values in a private run-local configuration; do not rewrite `.envrc`
+  without approval. Apply those overrides after loading `direnv`, consistently
+  for credential refresh, deployment, tests, and monitoring.
 - Read the selected checkout's `hack/e2e-deploy.sh` and the runner's environment
-  contract. Deployment requires `GOOGLE_APPLICATION_CREDENTIALS`,
-  `E2E_PROJECT_ID`, and `E2E_LOCATION`; map `E2E_SA_PATH` to
-  `GOOGLE_APPLICATION_CREDENTIALS` when appropriate. Pass the approved prefix
-  and region consistently to deployment and tests.
-- Verify the active Kubernetes context points to the approved project/cluster.
+  contract. Require `E2E_PROJECT_ID` and `E2E_LOCATION`. Map `E2E_SA_PATH` to an
+  absolute `GOOGLE_APPLICATION_CREDENTIALS` path when supplied. If this revision
+  supports active `gcloud` login plus Application Default Credentials, validate
+  both without printing tokens; do not require a service-account key unnecessarily.
+- If kubeconfig is empty or the approved context is absent, refresh it using
+  `gcloud container clusters get-credentials <cluster> --location <location>
+  --project <project>` with the resolved target and configured `KUBECONFIG`.
+  Verify the resulting context exactly matches that target. On a not-found
+  response, inspect cluster metadata read-only and ask to resolve mismatches;
+  do not run setup or assume the environment needs recreation.
   `e2e-deploy.sh` uses Helm's active context; it does not select the cluster.
   Do not deploy on a context mismatch. Align runner cluster/namespace settings
   with the deployment; do not rely on unrelated inherited defaults.
+- Before any cleanup or deployment, validate `E2E_NODE_SERVICE_ACCOUNT` and the
+  effective chart/controller default against IAM in the target project. An
+  inherited account can belong to an obsolete resource prefix even when the
+  context is correct. Confirm the account exists and is enabled; inspect the
+  existing node pool's service account and relevant IAM bindings as evidence,
+  rather than guessing a replacement from its name. Stop on a mismatch and ask
+  before correcting the setting or redeploying; do not create accounts or grant
+  roles under E2E approval. Also verify any configured controller identity.
+- Inspect cluster capabilities relevant to the PR (for example, IPv4-only versus
+  dual-stack). State coverage limitations before testing and in the report;
+  passing regression tests on IPv4-only infrastructure is not dual-stack
+  validation. Do not reconfigure the cluster to expand coverage without consent.
 - For a **PR/source run**, execute `hack/e2e-deploy.sh` from the exact source
   worktree with `RELEASE_VERSION` explicitly unset. This builds/pushes the local
   controller image and installs local charts. Check for dirty source and record
@@ -127,16 +157,30 @@ Launch long tests in a detached `tmux` session by default, not a long abortable
 agent Bash call. Use a run script in the artifact directory, load its environment,
 run the approved command with `pipefail`, capture the actual runner/Make status
 (e.g. `${PIPESTATUS[0]}` immediately after `tee`), and write an `exit-code` file.
+Record the current stage before each operation and keep separate deployment,
+runner, and overall exit statuses. Preserve the interrupted/failed stage in any
+fallback report instead of overwriting it with a generic `finished` marker.
 Tell the user the session name and absolute log/report paths. Monitor using
 short calls; never launch a duplicate because a monitoring call timed out.
 If tmux is unavailable, ask before installing it or choosing another launcher.
 
-Cancel only when requested, using `tmux send-keys -t <session> C-c` for graceful
-runner shutdown; do not use `tmux kill-session` or agent-tool abort as normal
-cancellation. SIGKILL bypasses Lease release and may leave test processes alive.
-After interruption, inspect processes and Lease ownership read-only. Lease
-expiry alone is not evidence that tests stopped; do not steal/delete the Lease
-or kill leftovers without approval. A missing session/exit marker is not success.
+Inspect the launcher's signal path before starting. `make` and `go run` may exit
+on Ctrl-C before the helper writes its report or releases its Lease; a successful
+`tmux send-keys` is not proof of graceful shutdown. Prefer running the compiled
+helper directly when these wrappers cannot preserve shutdown handling, while
+retaining the exact inspected environment/arguments and runner exit status.
+
+Cancel only when requested, using `tmux send-keys -t <session> C-c` to request
+shutdown; do not use `tmux kill-session` or agent-tool abort as normal
+cancellation. Inspect the helper's own cancellation implementation too; it may
+kill child process groups even when the parent handles interrupts. After
+interruption, check for surviving runner, Ginkgo, and test-binary processes,
+Lease ownership/renewal, and residual E2E resources read-only. Do not call it a
+clean shutdown unless those checks support that conclusion. Lease expiry alone
+is not evidence that tests stopped; do not steal/delete/clear the Lease or kill
+leftovers without approval. A missing session/exit marker is not success. If the
+helper did not produce a report or controller logs, collect logs read-only and
+write an explicitly cancelled/incomplete fallback report without invented totals.
 
 Capture runner output and its actual exit status without masking failures with
 `tee` or report-generation commands. Let the helper generate `report.md` and its
