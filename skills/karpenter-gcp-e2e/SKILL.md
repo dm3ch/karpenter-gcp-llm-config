@@ -151,7 +151,14 @@ The runner acquires/renews/releases the Kubernetes Lease `karpenter-e2e-tests`
 legacy `make e2e-test` fallback. This Lease protects tests only: check for active
 runs before deployment and any cleanup too. Inspect whether this revision's
 deploy target performs cleanup; get separate consent for that cleanup scope
-before invoking it. Never add ad-hoc deletion sequences.
+before invoking it. Never add ad-hoc deletion sequences without explicit cleanup
+approval. After approved cleanup, verify prior-run objects and cloud instances
+are actually gone, not merely that `kubectl delete` printed their names. A live
+controller may recreate NodeClaims while old workloads/NodePools still exist;
+selector deletion is a snapshot, not protection against that race. If new claims
+still reference previous-run NodePools, stop before tests and report them. Only
+perform a follow-up deletion within explicitly approved cleanup scope, after
+checking no active tests; never force-remove finalizers to hide the problem.
 
 Launch long tests in a detached `tmux` session by default, not a long abortable
 agent Bash call. Use a run script in the artifact directory, load its environment,
