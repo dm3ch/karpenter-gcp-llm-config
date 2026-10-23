@@ -1,238 +1,65 @@
 ---
 name: karpenter-gcp-e2e
-description: Run explicitly approved Karpenter GCP E2Es for a requested PR and/or release version. Deploy with e2e-deploy.sh first, use e2e-runner presets (standard by default) with 20 Ginkgo processes, then create or replace a PR comment from report.md. Never deploy or execute E2Es without explicit user approval for the target environment.
+description: Run explicitly approved GCP E2Es for a PR and/or release. Inspect and authorize deployment side effects including cleanup, deploy the exact source/release, then use e2e-runner with standard selection and 20 workers. Publish/replace the PR report only with explicit posting approval.
 ---
 
 # Karpenter GCP E2E
 
-## Consent and inputs
+Paths below are **provider-root-relative**, not this skill directory; `.pi/` is a separate Git repository. Links are skill-relative.
 
-Creating, reading, or invoking this skill is not itself permission to run E2Es.
-Only deploy and run tests after an explicit user request/approval for those
-operations and the target GCP project/cluster. A PR number, release version,
-review request, or request to prepare commands alone is not consent.
+## 1. Confirm scope and side effects
 
-Gather these inputs, using supplied values rather than asking again:
+A PR number, release, review request, or invoking this skill is not live-operation consent. Gather supplied inputs without asking again:
 
-- PR number/URL and repository, release version, or both.
-- Intended source revision and the existing E2E project, location, cluster,
-  namespace, and resource prefix. Keep credentials and environment identifiers
-  out of public reports.
-- `e2e-runner` helper location/ref, if not discoverable in the requested source.
-  The user may supply this with the run request; do not assume a globally
-  installed executable or invent a helper CLI.
-- Preset: **`standard`** unless explicitly overridden.
-- `GINKGO_PROCS`: **`20`** unless explicitly overridden. An inherited default of
-  4 is not a user override. Do not derive concurrency from automated quota
-  detection or silently reduce it. Report capacity blockers and ask before
-  changing concurrency or narrowing the requested preset.
-- PR comment destination, when a PR is supplied. A request to execute this
-  workflow includes publishing its report on that PR; if the user requests
-  local-only testing or posting permission is unclear, ask before posting.
+- PR/repository and/or release; exact intended test/source revision.
+- Existing project, location, region, prefix, cluster, namespace, and relevant overrides. Keep credentials/environment identifiers out of public reports.
+- Runner location/ref if absent from the checkout.
+- Selection: **`standard`**; global **`GINKGO_PROCS=20`**, unless explicitly overridden. Inherited Make default 4 is not an override. Do not silently reduce concurrency, narrow selection, or derive worker count from quotas; report capacity blockers and ask.
+- **Separate posting approval and destination** if a PR report is wanted. Execution permission alone does not authorize a comment; otherwise return a local report.
 
-Before live actions, confirm any missing deployment/test authorization and target
-in one concise question. State the revision/release, preset, concurrency, and
-that the workflow deploys first and publishes/replaces the PR report. Do not
-repeatedly ask for authorization already explicitly granted for that exact scope.
+Inspect selected scripts before consent/execution. **Current `hack/e2e-deploy.sh` always cleans labeled E2E resources and the test namespace before deployment**, can create a PriorityClass, publishes a source image, and installs/upgrades CRDs/controller. Obtain explicit approval for these operations on the resolved target, including embedded cleanup. No cleanup approval means stop: this script has no deploy-only switch.
 
-Never run setup, teardown, additional cleanup, or infrastructure repair under
-this approval. Ask separately if the existing environment is missing or broken.
-Do not start another run against a cluster already used by a different run.
+Batch missing approvals/target questions; state source/release, selection, workers, side effects, and any proposed publication. Do not re-request consent already granted for that exact scope. Setup, teardown, IAM grants, environment repair, extra cleanup, retries, and redeployment are not implicit extensions. Never overlap another run on the cluster; check before deployment/cleanup as well as testing.
 
-## Resolve source and helper (read-only)
+## 2. Resolve exact source, runner, and target
 
-All repository paths below are relative to the provider repository root, not
-this skill directory. Locate the root with Git; `.pi/` is a separate repository.
+- Read repository instructions; inspect PR/release metadata and scripts. Use an isolated provider `.worktree/` unless in-place work was explicitly approved; preserve the user's checkout. Record exact SHA/tag and dirty state. For PR plus release, use PR tests against that published release unless told otherwise.
+- Locate/read `hack/e2e-runner` (or supplied helper), preset definitions, reporting, environment, and cancellation before execution. Inspect help for side effects first; do not invent flags or substitute raw Ginkgo when the helper is absent. Ask for its path/ref.
+- Current wrapper: `make e2e-tests E2E_SELECTION=standard GINKGO_PROCS=20 E2E_REPORT=<artifact-dir>/report.md`. Confirm against this revision, including `RELEASE_VERSION`. Selection supports `standard`, `gpu`, `all`, `provisioning`, or comma-separated feature directories; do not mix presets with directories. Standard excludes GPU **and extended local SSD**; GPU execution requires explicit consent.
+- Current deployment derives cluster as `${E2E_PREFIX}-cluster` and fixes namespace to `karpenter-system`; cleanup also checks the prefix-derived context. Runner cluster/namespace overrides do **not** override deployment. Stop on unsupported targets; do not silently substitute another cluster or assume exported runner variables fix deployment.
+- Create fresh ignored artifacts, e.g. `.pi/e2e-results/<timestamp>-pr-<number>/`. Preserve separate deployment/runner logs, statuses, and report; never reuse stale results.
 
-1. Read repository instructions and inspect the requested PR/release metadata.
-   Use an isolated worktree under the provider repository's `.worktree/` for
-   PR/source work; do not reset or overwrite the user's checkout.
-2. Resolve and record the exact PR head SHA or release tag/commit. For a PR plus
-   release version, test the PR's tests against the specified published release
-   unless the user says otherwise; make this distinction explicit in the report.
-3. Locate `e2e-runner` in the requested checkout or at the user-provided path/ref.
-   Read its documentation, implementation, preset definitions, and report output
-   behavior. Use its documented help only after inspecting it for side effects.
-   Discover the actual invocation, preset option, concurrency option/environment
-   handling, artifact directory option, and `report.md` location. Do not guess
-   flag names. The previous workflow used `hack/e2e-runner`, wrapped by
-   `make e2e-tests E2E_SELECTION=standard GINKGO_PROCS=20`, with
-   `E2E_REPORT=<artifact-dir>/report.md`. Use this wrapper when inspection
-   confirms it invokes the helper and its signal handling is suitable for the
-   launcher below; older checkouts may run raw Ginkgo instead. If a Make/`go run`
-   wrapper prevents reliable cancellation, build the inspected helper into the
-   local artifact directory and invoke that binary with the wrapper's exact
-   environment and arguments. Record this launcher-only deviation; do not change
-   selection, concurrency, locking, or reporting behavior.
-   If absent, ask for its path/ref rather than substituting raw Ginkgo or a
-   legacy Make target and silently losing preset behavior.
-4. Verify `standard` (or the requested preset) exists. Prefer the helper's preset
-   definitions; do not duplicate suite lists in this skill. Inspect PR-provided
-   scripts before executing them, especially when credentials are available.
-5. Create a fresh, gitignored local artifact directory for this run, e.g.
-   `.pi/e2e-results/<timestamp>-pr-<number>/`. Preserve deployment log, runner
-   log, test artifacts, and `report.md` separately. Never reuse a stale report.
+## 3. Preflight and deploy
 
-## Preflight and deploy the right version
+- Verify tools/auth without printing tokens or credential contents. Require project/location and explicit region rather than Make's fallback. Resolve credential paths absolutely. If using `E2E_SA_PATH`, map it to `GOOGLE_APPLICATION_CREDENTIALS`; supported gcloud login plus ADC does not require a key.
+- When using the main checkout's allowed `.envrc`, use `direnv exec <main-checkout> <command>` in each shell, then enter the source worktree. Do not source/copy secrets or assume worktree inheritance. Never run `direnv allow`; ask the user if authorization is needed.
+- Reconcile inherited project/location/region/prefix/cluster/namespace, pod ranges, tag key, and node/controller service accounts against the approved target. Keep resolved values private/run-local; apply overrides after direnv consistently for refresh/deploy/tests/monitoring. Do not rewrite `.envrc` without approval.
+- Verify kubeconfig's exact target. If absent, refresh the approved target with `gcloud container clusters get-credentials <cluster> --location <location> --project <project>` using configured `KUBECONFIG`. On not-found, inspect metadata read-only and ask; do not provision. Helm uses the active context, not an automatically selected cluster.
+- Verify effective node/controller identities, account existence/enabled state, existing node pool identity and relevant IAM read-only. An inherited account may belong to an obsolete prefix. Stop on mismatch; do not guess replacements, create accounts, grant roles, or redeploy without approval.
+- Check relevant capabilities (e.g. IPv4 versus dual-stack); disclose coverage limits. Do not reconfigure infrastructure to broaden coverage.
+- For source: run inspected `hack/e2e-deploy.sh` from the exact worktree with `RELEASE_VERSION` **unset**. For published release: set it explicitly to the requested chart version; do not build today's checkout instead. Record dirty builds honestly.
+- Capture true deployment status with `pipefail`; require successful rollout/image verification before tests. Keep digest/details private and redact publication. On failure, stop—never test the old deployment. Produce a truthful failure report.
 
-- Check required tools and authentication without printing tokens, credential
-  contents, or service-account JSON. Resolve credential paths to absolute paths.
-- The previous workflow loaded the main checkout's ignored `.envrc` via
-  `direnv`, including its `KUBECONFIG`. Use `direnv exec <main-checkout> <command>`
-  in each new shell, then change into the selected source worktree. Do not assume
-  a worktree inherits a sibling checkout's `.envrc`. Never copy secrets into
-  worktrees or source `.envrc` directly. If it is not allowed, ask the user to
-  inspect/authorize it; do not run `direnv allow` on their behalf.
-- Treat inherited settings as unverified, even when `direnv` is allowed. Before
-  deployment, reconcile project, location, region, prefix, cluster, namespace,
-  pod ranges, tag key, and node service-account overrides with the approved
-  existing target. Require an explicit region rather than accidentally using
-  Make's `us-central1` default. A user-supplied cluster URL can identify the
-  intended target; do not silently substitute another discovered cluster. Keep
-  resolved values in a private run-local configuration; do not rewrite `.envrc`
-  without approval. Apply those overrides after loading `direnv`, consistently
-  for credential refresh, deployment, tests, and monitoring.
-- Read the selected checkout's `hack/e2e-deploy.sh` and the runner's environment
-  contract. Require `E2E_PROJECT_ID` and `E2E_LOCATION`. Map `E2E_SA_PATH` to an
-  absolute `GOOGLE_APPLICATION_CREDENTIALS` path when supplied. If this revision
-  supports active `gcloud` login plus Application Default Credentials, validate
-  both without printing tokens; do not require a service-account key unnecessarily.
-- If kubeconfig is empty or the approved context is absent, refresh it using
-  `gcloud container clusters get-credentials <cluster> --location <location>
-  --project <project>` with the resolved target and configured `KUBECONFIG`.
-  Verify the resulting context exactly matches that target. On a not-found
-  response, inspect cluster metadata read-only and ask to resolve mismatches;
-  do not run setup or assume the environment needs recreation.
-  `e2e-deploy.sh` uses Helm's active context; it does not select the cluster.
-  Do not deploy on a context mismatch. Align runner cluster/namespace settings
-  with the deployment; do not rely on unrelated inherited defaults.
-- Before any cleanup or deployment, validate `E2E_NODE_SERVICE_ACCOUNT` and the
-  effective chart/controller default against IAM in the target project. An
-  inherited account can belong to an obsolete resource prefix even when the
-  context is correct. Confirm the account exists and is enabled; inspect the
-  existing node pool's service account and relevant IAM bindings as evidence,
-  rather than guessing a replacement from its name. Stop on a mismatch and ask
-  before correcting the setting or redeploying; do not create accounts or grant
-  roles under E2E approval. Also verify any configured controller identity.
-- Inspect cluster capabilities relevant to the PR (for example, IPv4-only versus
-  dual-stack). State coverage limitations before testing and in the report;
-  passing regression tests on IPv4-only infrastructure is not dual-stack
-  validation. Do not reconfigure the cluster to expand coverage without consent.
-- For a **PR/source run**, execute `hack/e2e-deploy.sh` from the exact source
-  worktree with `RELEASE_VERSION` explicitly unset. This builds/pushes the local
-  controller image and installs local charts. Check for dirty source and record
-  it; never claim a dirty build is exactly the pristine PR SHA.
-- For a **published release run**, execute `hack/e2e-deploy.sh` with
-  `RELEASE_VERSION` explicitly set to the requested published chart version.
-  Do not build the current checkout's controller instead.
-- Save deployment output and retain the real exit status if piping through
-  `tee` (use `pipefail`). Require successful deployment and read-only rollout /
-  image verification before testing. Record the deployed version or image
-  digest privately; redact sensitive registry/project details for publication.
-- On deployment failure, stop; do not test the previously installed version.
-  Prepare a failure report and follow the reporting steps below.
+## 4. Run and observe
 
-## Run via e2e-runner
+Use inspected helper/wrapper with the resolved selection and effective **20 global workers** (or explicit override), never manual per-suite waves. Verify flags/environment actually select that count.
 
-Use the helper's documented invocation from the selected test checkout with the
-resolved preset and **`GINKGO_PROCS=20`** (or the explicit user override).
-If the helper uses a CLI concurrency option instead, pass that too/as required
-and verify the effective worker count. Do not assume exporting an environment
-variable overrides a hard-coded runner default.
+The runner acquires/renews/releases Lease `karpenter-e2e-tests` in the controller namespace. Never bypass a held Lease or fall back to unlocked `make e2e-test`. This lock covers tests only, not deployment/cleanup.
 
-The previous runner selections were `standard` (non-GPU), `gpu`, `all`,
-`provisioning`, or comma-separated feature directories. Verify these against
-this revision. Do not mix preset names with directory lists. GPU execution
-requires explicit consent for that run. Twenty workers is the global spec
-concurrency, not twenty per feature; do not add manual per-suite waves.
+Before launching, read [launcher, cleanup, and cancellation details](references/execution.md). Default to detached tmux with a run script, correct environment, `pipefail`, stage/status files, and separate deployment/runner exit codes. If wrappers break cancellation, build the inspected runner locally and invoke its binary with identical environment/arguments; record this launcher-only deviation. Do not change selection, locking, or reporting. If tmux is unavailable, ask before installation or a different launcher.
 
-The runner acquires/renews/releases the Kubernetes Lease `karpenter-e2e-tests`
-(previously in `karpenter-system`). Never bypass a held Lease or use an unlocked
-legacy `make e2e-test` fallback. This Lease protects tests only: check for active
-runs before deployment and any cleanup too. Inspect whether this revision's
-deploy target performs cleanup; get separate consent for that cleanup scope
-before invoking it. Never add ad-hoc deletion sequences without explicit cleanup
-approval. After approved cleanup, verify prior-run objects and cloud instances
-are actually gone, not merely that `kubectl delete` printed their names. A live
-controller may recreate NodeClaims while old workloads/NodePools still exist;
-selector deletion is a snapshot, not protection against that race. If new claims
-still reference previous-run NodePools, stop before tests and report them. Only
-perform a follow-up deletion within explicitly approved cleanup scope, after
-checking no active tests; never force-remove finalizers to hide the problem.
+Tell the user session name and absolute log/report paths. Monitor with short calls; a timeout is not reason to duplicate a run. Cancel only on request; request shutdown rather than killing the session. Verify process/Lease/resource state before claiming clean termination; no leftover kills, Lease clearing, or extra deletion without approval.
 
-Launch long tests in a detached `tmux` session by default, not a long abortable
-agent Bash call. Use a run script in the artifact directory, load its environment,
-run the approved command with `pipefail`, capture the actual runner/Make status
-(e.g. `${PIPESTATUS[0]}` immediately after `tee`), and write an `exit-code` file.
-Record the current stage before each operation and keep separate deployment,
-runner, and overall exit statuses. Preserve the interrupted/failed stage in any
-fallback report instead of overwriting it with a generic `finished` marker.
-Tell the user the session name and absolute log/report paths. Monitor using
-short calls; never launch a duplicate because a monitoring call timed out.
-If tmux is unavailable, ask before installing it or choosing another launcher.
+After approved cleanup, verify previous-run objects and cloud instances are gone; a delete message is insufficient. Controllers can recreate claims while old workloads/pools remain. Stop if claims still reference prior-run pools; no finalizer removal or unapproved follow-up deletion.
 
-Inspect the launcher's signal path before starting. `make` and `go run` may exit
-on Ctrl-C before the helper writes its report or releases its Lease; a successful
-`tmux send-keys` is not proof of graceful shutdown. Prefer running the compiled
-helper directly when these wrappers cannot preserve shutdown handling, while
-retaining the exact inspected environment/arguments and runner exit status.
+Read the fresh report **and companion controller log** promptly. Check panics/unexpected errors, distinguish cleanup noise, and disclose missing samples/log collection failures even when specs pass. Preserve real exit status; no automatic retries, redeploys, quota changes, broadened selections, or cleanup. Report residual resources.
 
-Cancel only when requested, using `tmux send-keys -t <session> C-c` to request
-shutdown; do not use `tmux kill-session` or agent-tool abort as normal
-cancellation. Inspect the helper's own cancellation implementation too; it may
-kill child process groups even when the parent handles interrupts. After
-interruption, check for surviving runner, Ginkgo, and test-binary processes,
-Lease ownership/renewal, and residual E2E resources read-only. Do not call it a
-clean shutdown unless those checks support that conclusion. Lease expiry alone
-is not evidence that tests stopped; do not steal/delete/clear the Lease or kill
-leftovers without approval. A missing session/exit marker is not success. If the
-helper did not produce a report or controller logs, collect logs read-only and
-write an explicitly cancelled/incomplete fallback report without invented totals.
+## 5. Report and optionally publish
 
-Capture runner output and its actual exit status without masking failures with
-`tee` or report-generation commands. Let the helper generate `report.md` and its
-normal artifacts. Read the report and companion controller log as soon as the
-run finishes. Scan for panics and unexpected errors, distinguish intentional
-cleanup/shutdown noise from real problems, and disclose missing resource samples
-or log collection failures even if specs passed.
+- If deployment/runner failed before reporting, write an explicitly failed/cancelled/incomplete `report.md` with stage and evidence; never invent counts or label incomplete work passed.
+- Identify tested PR SHA, deployed source/release, selection, effective workers, available counts/results, and coverage/environment limits. A changed PR head is not covered by the old run. Preserve original artifacts; make a separate sanitized publication copy if needed. No raw uploads without separate approval.
+- No PR or no posting approval: return local report only. If authorized, use hidden marker `<!-- karpenter-gcp-e2e-report -->` plus sanitized content.
+- Resolve authenticated account with `gh api`; paginate **all** PR issue comments. Match marker **and author identity**. PATCH the exact owned comment endpoint, otherwise POST. Use JSON file/stdin (e.g. `jq --rawfile`), not shell interpolation. Never use `gh pr comment --edit-last`, overwrite another author's/unrelated comment, or delete duplicates. With multiple owned matches update newest and flag duplicates; ask before adopting an older unmarked report's exact ID.
+- Posting failure is separate from test failure; retain local report and never claim an update succeeded.
 
-On failed tests, still collect and publish the report. Do not automatically
-retry, broaden the preset, redeploy, change quotas, or delete resources outside
-the approved scope. Report residual resources and any suggested follow-up.
-
-## Publish or replace the PR report
-
-1. Read the newly generated `report.md`. If the runner failed before producing
-   one (or deployment failed), write a truthful `report.md` stating the failed
-   stage, that tests did not run/complete, and the available evidence. Never
-   fabricate test counts or label an incomplete run as passed.
-2. Ensure the report identifies the tested PR head SHA, deployed source/release,
-   preset, effective worker count, result/counts when available, and any
-   environment or coverage limitations. Preserve the helper's report; add
-   missing context as needed. Keep raw logs/artifacts local unless upload is
-   separately approved. Redact secrets and sensitive environment identifiers
-   before posting; retain a separate sanitized publication copy if necessary.
-3. If no PR was supplied, save the report locally and return its path; do not
-   guess a PR or create one. If the PR head changed during testing, label the
-   report with the tested SHA and flag that it does not cover the new head.
-4. Use a stable hidden marker in the posted body:
-   `<!-- karpenter-gcp-e2e-report -->`, followed by the sanitized `report.md`
-   content. Do not use `gh pr comment --edit-last`: that may replace an unrelated
-   comment.
-5. With `gh api`, resolve the authenticated account, then list **all pages** of
-   `/repos/{owner}/{repo}/issues/{pr}/comments`. Match both the marker and that
-   account's author identity. If a matching comment exists, PATCH its exact
-   `/repos/{owner}/{repo}/issues/comments/{comment_id}` endpoint with the new
-   body; otherwise POST to the PR's issue-comments endpoint. Send the body via
-   a JSON file/stdin (e.g. `jq --rawfile body ...`), not shell interpolation.
-   Never edit another author's comment or delete duplicate comments without
-   approval. If multiple owned matches exist, update the newest and flag them.
-   For an older unmarked E2E report comment, inspect ownership and content and
-   ask to adopt its exact comment ID rather than blindly appending a duplicate
-   or overwriting unrelated text; include the marker when replacing it.
-6. If posting fails, keep the local report and disclose the publishing failure
-   separately from the test outcome. Do not claim the PR comment was updated.
-
-Finish with the tested revision/release, preset, concurrency, deployment and test
-outcome, local `report.md` path, PR comment URL (if published), and any blockers.
-Do not hide failed tests behind a successful comment update.
+Finish with tested revision/release, selection/workers, deployment/test outcome, report path, authorized comment URL if published, blockers, and residual resources. A successful comment update cannot hide failed tests.
