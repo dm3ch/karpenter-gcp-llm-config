@@ -13,6 +13,10 @@ Root `AGENTS.md` symlinks here, in the separate `.pi/` Git repository. Commands 
 - Preserve GPG signing and hooks/checks. Stop for interactive signing help if needed; never bypass them without exact user authorization.
 - Implement in an ignored `.worktree/` unless the user explicitly approves in-place edits. Preserve unrelated changes; no temporary sibling workspaces under `~/Workspace`.
 
+## Greptile rules
+
+Before planning, implementing, or reviewing changes, read `.greptile/rules.md`, `.greptile/config.json`, and `.greptile/files.json` from the provider root. Follow their applicable rules and instructions, and read the reference files listed in `.greptile/files.json` whose scopes match the changes. Treat these as shared implementation and review guidance, not just Greptile configuration; consult the current files rather than duplicating their rules here. Live operations still require the explicit approval described above.
+
 ## Code map and working style
 
 - `cmd/controller/`: entrypoint; `pkg/cloudprovider/`: core integration.
