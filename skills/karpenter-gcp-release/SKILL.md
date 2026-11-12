@@ -26,6 +26,26 @@ Be an interactive navigator, not a second release runbook. Do not duplicate rele
 - Verify the outcome before marking the step complete and moving on. Distinguish observed evidence from maintainer-reported results. Stop on failure, ambiguity, or an unmet gate; do not silently skip steps or retry mutations.
 - For longer sessions, keep progress, evidence, runbook SHA, release source, blockers, and the next action in an ignored `.pi/plans/release-<version>.md`. Exclude credentials and sensitive environment identifiers. Saved progress is not continuing authorization.
 
+## Prepare maintainer-reviewed release wording
+
+- Follow the provider runbook's release-notes requirements and its linked template for every minor or patch release. Keep the procedure and template in the provider repository; do not invent a parallel release policy here.
+- Reuse Highlights the maintainer has supplied. If missing, ask for them or offer an LLM-written proposal grounded in the actual release source, PRs, migration guide, and verified artifact evidence. The maintainer selects what matters and approves the wording before draft creation or an authorized update. Do not treat approval to investigate or collect a PR inventory as approval of the narrative or publication.
+- Highlights is the only routinely authored section. Follow the runbook's native GitHub generation flow for the changelog, categories, new-contributor acknowledgements when applicable, and comparison link; let the documented command add the migration link. Do not require separately authored upgrade, changelog, or contributor template sections.
+- Git-history tooling must not select Highlights or synthesize benefits, compatibility, migration, security, or performance claims. Use it for the complete immutable tag-range inventory and native generated notes; an LLM proposal is advisory, not a commit-title ranking presented as authoritative editorial judgment.
+- Reconcile all commits/associated merged PRs with the generated draft, check API pagination, account for direct commits and deliberate exclusions, and flag important changes hidden by category or author exclusions. Native generation does not reliably recover original contributor credit for replacement PRs: verify linked originals and commit authorship, distinguish original work from maintainer integration, and flag or correct exceptional credit gaps during review. Do not infer authorship from reviewer participation.
+- Save proposed Highlights to a real ignored path for review and remove placeholders/comments before draft creation. After an authorized write, verify the remote draft preserves the approved Highlights and migration link, inspect/save the generated notes, and resolve completeness/attribution findings before publication. Keep draft creation, publication, announcements, and live validation separately authorized.
+
+### Choose worthwhile Highlights
+
+When proposing Highlights, prioritize meaningful changes for users, contributors, or project stewardship rather than every merged PR:
+
+- **New maintainers or significant governance changes:** welcome publicly confirmed maintainers and explain the role change. Verify the project's ownership/governance records or an approved announcement; a contribution or review alone does not establish maintainer status.
+- **Major project-infrastructure milestones:** changes materially improving release trust, delivery, contributor experience, or test confidence, such as signed artifacts/build provenance or a new persistent E2E environment. Explain the demonstrated benefit, not implementation trivia; routine workflow/cache tweaks are not automatically highlights.
+- **Substantial new features and major upgrades:** important provisioning/configuration capabilities or core upgrades with concrete operator impact. Name the capability and relevant limitations, not just a dependency version or PR title.
+- **Important fixes and upgrade actions:** critical reliability/security fixes, breaking defaults, or required migration steps when they materially affect users. A small patch can be highlight-worthy; significance is not lines changed. Ground security/performance claims in evidence and do not equate signed artifacts with vulnerability-free software.
+
+Prefer a few concise, evidence-linked bullets. Do not manufacture an entry for every category or promote routine dependency bumps, pricing refreshes, formatting, generated files, or minor refactors unless there is a verified material impact. An LLM may suggest candidates and explain why they matter; the maintainer decides which to include. Keep infrastructure details public and generic—never expose private environment identifiers or credentials in release wording.
+
 ## Respect execution boundaries
 
 - Follow repository safety, worktree, signing, remote, and publication rules. Runbook commands do not override them. Preserve unrelated local work; do not blindly execute destructive examples or use literal URLs to bypass push restrictions.
