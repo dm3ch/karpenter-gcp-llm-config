@@ -26,6 +26,14 @@ Be an interactive navigator, not a second release runbook. Do not duplicate rele
 - Verify the outcome before marking the step complete and moving on. Distinguish observed evidence from maintainer-reported results. Stop on failure, ambiguity, or an unmet gate; do not silently skip steps or retry mutations.
 - For longer sessions, keep progress, evidence, runbook SHA, release source, blockers, and the next action in an ignored `.pi/plans/release-<version>.md`. Exclude credentials and sensitive environment identifiers. Saved progress is not continuing authorization.
 
+## Prepare maintainer-reviewed release wording
+
+- Follow the provider runbook's release-notes requirements and its linked template for every minor or patch release. Keep the procedure and template in the provider repository; do not invent a parallel release policy here.
+- Reuse Highlights and upgrade wording the maintainer has supplied. If missing, ask for it or offer an LLM-written proposal grounded in the actual release source, PRs, migration guide, and verified artifact evidence. The maintainer selects what matters and approves the wording before draft creation or an authorized update. Do not treat approval to investigate or generate a PR inventory as approval of the narrative or publication.
+- Use Git-history tooling only to collect the complete immutable tag-range inventory and changelog seed. It must not select Highlights or synthesize benefits, compatibility, migration, security, or performance claims. An LLM proposal is advisory and must cite evidence rather than repeat every commit title as a highlight.
+- Reconcile all commits/associated merged PRs with the changelog, check API pagination, account for direct commits and deliberate exclusions, and flag important changes hidden by category or dependency labels. Verify original contributor credit for replacement PRs from linked originals and commit authorship; distinguish original work from maintainer integration, not reviewer participation.
+- Save the proposed complete notes to a real ignored path for review. Require the maintainer-reviewed Highlights and Upgrade considerations sections, audited changelog, migration link, and contributor credits required by the current template. Verify that no placeholders remain, and compare the saved wording with the remote draft after an authorized write. Keep draft creation, publication, announcements, and live validation separately authorized.
+
 ## Respect execution boundaries
 
 - Follow repository safety, worktree, signing, remote, and publication rules. Runbook commands do not override them. Preserve unrelated local work; do not blindly execute destructive examples or use literal URLs to bypass push restrictions.
