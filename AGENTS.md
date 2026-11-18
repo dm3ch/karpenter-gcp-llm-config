@@ -17,6 +17,17 @@ Root `AGENTS.md` symlinks here, in the separate `.pi/` Git repository. Commands 
 
 Before planning, implementing, or reviewing changes, read `.greptile/rules.md`, `.greptile/config.json`, and `.greptile/files.json` from the provider root. Follow their applicable rules and instructions, and read the reference files listed in `.greptile/files.json` whose scopes match the changes. Treat these as shared implementation and review guidance, not just Greptile configuration; consult the current files rather than duplicating their rules here. Live operations still require the explicit approval described above.
 
+## Research precedents
+
+Prefer primary GCP/GKE documentation and established implementations when researching behavior or adapting an implementation:
+
+- [kubernetes/cloud-provider-gcp](https://github.com/kubernetes/cloud-provider-gcp): GCE/GKE controller behavior, node identity, CSR approval and bootstrap sources.
+- [Cluster Autoscaler GCE provider](https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler/cloudprovider/gce): GCP/GKE instance, node-pool and capacity behavior.
+- [kOps GCP sources](https://github.com/kubernetes/kops/tree/master/upup/pkg/fi/cloudup/gcetasks) and [GCP documentation](https://kops.sigs.k8s.io/getting_started/gce/): self-managed GCP infrastructure and bootstrap precedents; inspect related nodeup sources when relevant.
+- [Official GKE documentation](https://docs.cloud.google.com/kubernetes-engine/docs), [GKE API reference](https://docs.cloud.google.com/kubernetes-engine/docs/reference/rest) and linked Google-maintained source: supported platform contracts, prerequisites and limitations.
+
+Verify precedents against the applicable release and current provider source. Reuse relevant behavior where practical, cite pinned upstream source in adapted code, and document necessary differences. Managed GKE/MIG, standalone Karpenter VM and self-managed kOps trust/lifecycle models are not interchangeable; analogous code is design evidence, not proof of current GKE behavior. Use the configured web/source-fetch tools for external research, and keep live-operation consent boundaries unchanged.
+
 ## Code map and working style
 
 - `cmd/controller/`: entrypoint; `pkg/cloudprovider/`: core integration.
