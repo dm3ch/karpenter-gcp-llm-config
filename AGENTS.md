@@ -47,6 +47,7 @@ Paths are provider-root-relative:
 | Unfamiliar architecture/subsystem context           | `.pi/skills/knowledge-base/SKILL.md`; verify synthesis against source |
 | Go behavior changes or writing/reviewing unit tests | `.pi/skills/unit-testing/SKILL.md`                                    |
 | Core upgrade/migration assessment                   | `.pi/skills/karpenter-core-upgrade/SKILL.md`                          |
+| Recent GKE release notes → feature proposals        | `.pi/skills/gke-release-notes-review/SKILL.md`                        |
 | Explicitly authorized live E2Es                     | `.pi/skills/karpenter-gcp-e2e/SKILL.md`                               |
 
 ## Validation
